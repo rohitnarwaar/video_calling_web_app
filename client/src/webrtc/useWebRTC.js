@@ -6,7 +6,7 @@ const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || 'http://localhost:50
 
 const iceServers = [{ urls: ['stun:stun.l.google.com:19302'] }];
 
-export default function useWebRTC({ name='Guest' }) {
+export default function useWebRTC({ name = 'Guest' }) {
   const socketRef = useRef(null);
   const localStreamRef = useRef(null);
   const pcMapRef = useRef(new Map()); // peerId -> RTCPeerConnection
@@ -20,7 +20,7 @@ export default function useWebRTC({ name='Guest' }) {
   const addPeerStream = (id, stream) => {
     setPeers(prev => {
       const exists = prev.some(p => p.id === id);
-      if (exists) return prev.map(p => p.id===id ? {...p, stream} : p);
+      if (exists) return prev.map(p => p.id === id ? { ...p, stream } : p);
       return [...prev, { id, stream }];
     });
   };
@@ -35,17 +35,41 @@ export default function useWebRTC({ name='Guest' }) {
   useEffect(() => {
     socketRef.current = io(SIGNALING_URL, { transports: ['websocket'] });
 
+    socketRef.current.on('connect', () => {
+      console.log('✅ Connected to signaling server', SIGNALING_URL, socketRef.current.id);
+    });
+
+    socketRef.current.on('connect_error', (err) => {
+      console.error('❌ Socket connection error:', err.message);
+    });
+
+
     const setupMedia = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       localStreamRef.current = stream;
+
+      // show local video immediately
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.autoplay = true;
+      video.muted = true; // avoid echo
+      video.playsInline = true;
+      video.style.width = '240px';
+      video.style.borderRadius = '8px';
+      video.style.margin = '8px';
+      video.id = 'localVideo';
+      document.getElementById('video-grid')?.prepend(video);
+      console.log('🎥 Local stream ready');
+
     };
     setupMedia();
 
     const s = socketRef.current;
 
-    s.on('user-joined', ({ socketId }) => createOfferFor(socketId));
-    s.on('participants', (peers) => peers.forEach(p => createOfferFor(p.socketId, false))); // we'll let remote create answer after we send offer
-
+    s.on('participants', (peers) => peers.forEach(p => createOfferFor(p.socketId)));
+    s.on('user-joined', ({ socketId }) => {
+      console.log('New user joined:', socketId);
+    });
     s.on('offer', async ({ from, sdp }) => {
       const pc = getOrCreatePC(from);
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
@@ -80,6 +104,7 @@ export default function useWebRTC({ name='Guest' }) {
     if (pcMapRef.current.has(peerId)) return pcMapRef.current.get(peerId);
     const pc = new RTCPeerConnection({ iceServers });
 
+
     // push local tracks
     localStreamRef.current?.getTracks().forEach(track => pc.addTrack(track, localStreamRef.current));
 
@@ -96,7 +121,7 @@ export default function useWebRTC({ name='Guest' }) {
     };
 
     pc.onconnectionstatechange = () => {
-      if (['disconnected','failed','closed'].includes(pc.connectionState)) {
+      if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
         removePeer(peerId);
       }
     };
@@ -107,6 +132,10 @@ export default function useWebRTC({ name='Guest' }) {
 
   const createOfferFor = async (peerId, emitUserJoined = true) => {
     const pc = getOrCreatePC(peerId);
+    if (pc.signalingState !== 'stable') {
+      console.warn(`Skipping offer creation for ${peerId}, connection not stable`);
+      return;
+    }
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     socketRef.current.emit('offer', { to: peerId, sdp: pc.localDescription });
@@ -114,8 +143,10 @@ export default function useWebRTC({ name='Guest' }) {
 
   const joinRoom = async (roomId) => {
     await waitForLocalStream();
+    socketRef.current.roomId = roomId; // store for later
     socketRef.current.emit('join-room', { roomId, name });
   };
+
 
   const waitForLocalStream = () => new Promise(res => {
     if (localStreamRef.current) return res();
@@ -171,10 +202,10 @@ export default function useWebRTC({ name='Guest' }) {
 
   // chat
   const sendChat = (text) => {
-    const roomId = socketRef.current._opts.query?.roomId || null; // not used, so pass separately
-    socketRef.current.emit('chat-message', { roomId: null, text });
+    socketRef.current.emit('chat-message', { roomId: socketRef.current.roomId, text });
     setMessages(prev => [...prev, { from: name, text, at: Date.now() }]);
   };
+
 
   return {
     localStream: localStreamRef,
