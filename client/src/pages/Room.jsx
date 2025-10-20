@@ -69,7 +69,6 @@ export default function Room() {
         leaveRoom={leaveRoom}
       />
 
-      {/* Floating Chat Button (for mobile) */}
       <button
         onClick={toggleChat}
         className="fixed bottom-6 right-6 p-4 rounded-full bg-purple-600 hover:bg-purple-500 text-white shadow-xl lg:hidden z-40"
