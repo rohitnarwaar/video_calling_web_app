@@ -41,7 +41,7 @@ io.on('connection', (socket) => {
 
   // chat
   socket.on('chat-message', ({ roomId, text }) => {
-    io.to(roomId).emit('chat-message', { from: socket.data.name, text, at: Date.now() });
+    socket.to(roomId).emit('chat-message', { from: from || socket.data.name, text, at: Date.now() });
   });
 
   // leave / disconnect

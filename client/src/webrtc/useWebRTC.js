@@ -202,8 +202,9 @@ export default function useWebRTC({ name = 'Guest' }) {
 
   // chat
   const sendChat = (text) => {
-    socketRef.current.emit('chat-message', { roomId: socketRef.current.roomId, text });
-    setMessages(prev => [...prev, { from: name, text, at: Date.now() }]);
+    const roomId = socketRef.current.roomId
+    socketRef.current.emit('chat-message', { roomId, text, from: name });
+    setMessages(prev => [...prev, { from: name, text, at: Date.now(), self: true}]);
   };
 
 
